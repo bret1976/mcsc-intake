@@ -284,10 +284,32 @@ function ringFor(link: IntakeLink) {
   const body = sub
     ? `${sub.product} · ${sub.quantity} ${sub.unit}${link.label ? ` · ${link.label}` : ""}`
     : `${link.publicId} just filed`;
-  return ringDesk({ title: "MCSC Intake", body });
+  return ringDesk({ title: "MCSC Intake — new request", body }).catch(() => undefined);
 }
 
 export type PingSettings = DeskPing & { doorbell: string };
+
+async function upsertPing(emailRaw: string): Promise<PingSettings> {
+  const email = emailRaw.trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error("That email doesn’t look right.");
+  }
+  const sql = await getSql();
+  const existing = await readDeskPing();
+  const topic = existing?.pingTopic || `mcsc-${randomToken(18)}`;
+  await sql.query(
+    `insert into desk_settings (id, ping_topic, ping_email, ping_on, updated_at)
+     values (1, $1, $2, true, now())
+     on conflict (id) do update set
+       ping_email = excluded.ping_email,
+       ping_on = true,
+       updated_at = now()`,
+    [topic, email],
+  );
+  const settings = await readDeskPing();
+  if (!settings) throw new Error("Could not turn pings on.");
+  return { ...settings, doorbell: doorbellUrl(settings.pingTopic) };
+}
 
 export const getPingSettings = createServerFn({ method: "POST" }).handler(
   async (): Promise<PingSettings | null> => {
@@ -300,29 +322,11 @@ export const getPingSettings = createServerFn({ method: "POST" }).handler(
 export const enablePing = createServerFn({ method: "POST" })
   .validator(
     z.object({
-      email: z.string().trim().max(120),
+      email: z.string().trim().min(3).max(120),
     }),
   )
   .handler(async ({ data }): Promise<PingSettings> => {
-    const email = data.email.trim();
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      throw new Error("That email doesn’t look right.");
-    }
-    const sql = await getSql();
-    const existing = await readDeskPing();
-    const topic = existing?.pingTopic || `mcsc-${randomToken(18)}`;
-    await sql.query(
-      `insert into desk_settings (id, ping_topic, ping_email, ping_on, updated_at)
-       values (1, $1, $2, true, now())
-       on conflict (id) do update set
-         ping_email = excluded.ping_email,
-         ping_on = true,
-         updated_at = now()`,
-      [topic, email],
-    );
-    const settings = await readDeskPing();
-    if (!settings) throw new Error("Could not turn pings on.");
-    return { ...settings, doorbell: doorbellUrl(settings.pingTopic) };
+    return upsertPing(data.email);
   });
 
 export const disablePing = createServerFn({ method: "POST" }).handler(
@@ -337,14 +341,17 @@ export const disablePing = createServerFn({ method: "POST" }).handler(
   },
 );
 
-export const sendTestPing = createServerFn({ method: "POST" }).handler(
-  async (): Promise<{ ok: true }> => {
-    const settings = await readDeskPing();
-    if (!settings?.pingOn) throw new Error("Turn pings on first.");
-    await ringDesk({
-      title: "MCSC Intake",
+export const sendTestPing = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      email: z.string().trim().min(3).max(120),
+    }),
+  )
+  .handler(async ({ data }): Promise<{ ok: true; detail: string }> => {
+    await upsertPing(data.email);
+    return ringDesk({
+      title: "MCSC Intake — test ping",
       body: "Test ping. If you got this, the doorbell works.",
+      requireEmail: true,
     });
-    return { ok: true };
-  },
-);
+  });

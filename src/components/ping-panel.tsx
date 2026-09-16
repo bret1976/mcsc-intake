@@ -15,6 +15,7 @@ export function PingPanel() {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [tested, setTested] = useState(false);
 
@@ -29,6 +30,7 @@ export function PingPanel() {
 
   async function turnOn() {
     setError(null);
+    setNote(null);
     setBusy(true);
     try {
       const next = await enablePing({ data: { email } });
@@ -45,6 +47,7 @@ export function PingPanel() {
 
   async function turnOff() {
     setError(null);
+    setNote(null);
     setBusy(true);
     try {
       const next = await disablePing();
@@ -58,11 +61,15 @@ export function PingPanel() {
 
   async function test() {
     setError(null);
+    setNote(null);
     setBusy(true);
     try {
-      await sendTestPing();
+      const result = await sendTestPing({ data: { email } });
+      const next = await getPingSettings();
+      setSettings(next);
+      setNote(result.detail);
       setTested(true);
-      window.setTimeout(() => setTested(false), 2000);
+      window.setTimeout(() => setTested(false), 2400);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Test ping failed.");
     } finally {
@@ -89,8 +96,9 @@ export function PingPanel() {
         <div>
           <p className="mb-1 text-sm font-medium text-fg">Phone ping</p>
           <p className="text-xs text-muted">
-            When a customer hits Send request, this doorbell rings. Put the email
-            that lives on your phone.
+            This emails the address on your phone. First time, you may get a
+            confirm link — click it, then Test ping again. After that, every
+            Send request hits that inbox.
           </p>
         </div>
         {on ? (
@@ -110,7 +118,7 @@ export function PingPanel() {
             type="email"
             inputMode="email"
             autoComplete="email"
-            placeholder="martin@…"
+            placeholder="you@…"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
@@ -121,19 +129,21 @@ export function PingPanel() {
               <Button type="button" variant="outline" onClick={turnOff} disabled={busy}>
                 Off
               </Button>
-              <Button type="button" onClick={test} disabled={busy}>
+              <Button type="button" onClick={test} disabled={busy || !email.trim()}>
                 {tested ? (
                   <>
                     <Check className="size-4" strokeWidth={1.75} />
                     Sent
                   </>
+                ) : busy ? (
+                  "Sending…"
                 ) : (
                   "Test ping"
                 )}
               </Button>
             </>
           ) : (
-            <Button type="button" onClick={turnOn} disabled={busy}>
+            <Button type="button" onClick={turnOn} disabled={busy || !email.trim()}>
               {busy ? "Saving…" : "Turn pings on"}
             </Button>
           )}
@@ -162,6 +172,11 @@ export function PingPanel() {
         </div>
       ) : null}
 
+      {note ? (
+        <p className="mt-3 text-sm text-primary" role="status">
+          {note}
+        </p>
+      ) : null}
       {error ? (
         <p className="mt-3 text-sm text-danger" role="alert">
           {error}
