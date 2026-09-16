@@ -1,9 +1,10 @@
 [build]
 builder = "NIXPACKS"
 buildCommand = "NITRO_PRESET=node-server npm run build"
+watchPatterns = ["src/**", "package.json", "package-lock.json", "vite.config.ts", "migrations/**"]
 
 [deploy]
-startCommand = "npm run start"
+startCommand = "npm start"
 healthcheckPath = "/"
 healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
