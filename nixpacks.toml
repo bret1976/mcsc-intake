@@ -1,0 +1,6 @@
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[variables]
+NITRO_PRESET = "node-server"
+NODE_ENV = "production"
