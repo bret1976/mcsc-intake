@@ -1,8 +1,9 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
 import { Link2, Plus } from "lucide-react";
 import { McscMark } from "@/components/mark";
 import { CopyFormLink } from "@/components/copy-form-link";
+import { PingPanel } from "@/components/ping-panel";
 import { SharePanel } from "@/components/share-panel";
 import { Tracker } from "@/components/tracker";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,30 @@ export function Desk({ initial }: { initial: IntakeLink[] }) {
   useEffect(() => {
     setLinks(initial);
   }, [initial]);
+
+  const seenFiled = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const filed = links.filter((l) => l.submittedAt);
+    if (seenFiled.current === null) {
+      seenFiled.current = new Set(filed.map((l) => l.id));
+      return;
+    }
+    for (const link of filed) {
+      if (seenFiled.current.has(link.id)) continue;
+      seenFiled.current.add(link.id);
+      const sub = link.submission;
+      const body = sub
+        ? `${sub.product} · ${sub.quantity} ${sub.unit}`
+        : "A request just landed.";
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        try {
+          new Notification("MCSC Intake", { body });
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }, [links]);
 
   useEffect(() => {
     let alive = true;
@@ -118,6 +143,8 @@ export function Desk({ initial }: { initial: IntakeLink[] }) {
           Open the form
         </Link>
       </div>
+
+      <PingPanel />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
         <section className="rounded-xl border border-border bg-surface p-4 shadow-panel sm:p-5">

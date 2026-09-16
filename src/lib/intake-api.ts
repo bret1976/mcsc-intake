@@ -4,6 +4,7 @@ import { getSql } from "@/lib/db";
 import { publicId, randomToken } from "@/lib/ids";
 import type { Status } from "@/lib/catalog";
 import { PRODUCTS, UNITS, TERMS, PAYMENT_TERMS, STATUSES } from "@/lib/catalog";
+import { doorbellUrl, readDeskPing, ringDesk, type DeskPing } from "@/lib/ping";
 
 export type Submission = {
   product: string;
@@ -202,6 +203,7 @@ export const submitOpen = createServerFn({ method: "POST" })
     );
     const updated = await fetchLinkByToken(token);
     if (!updated) throw new Error("Saved, but failed to reload the request.");
+    await ringFor(updated);
     return updated;
   });
 
@@ -250,6 +252,7 @@ export const submitIntake = createServerFn({ method: "POST" })
     );
     const updated = await fetchLinkByToken(data.token);
     if (!updated) throw new Error("Saved, but failed to reload the request.");
+    await ringFor(updated);
     return updated;
   });
 
@@ -275,3 +278,73 @@ export const setLinkStatus = createServerFn({ method: "POST" })
     if (!updated) throw new Error("Failed to update status.");
     return updated;
   });
+
+function ringFor(link: IntakeLink) {
+  const sub = link.submission;
+  const body = sub
+    ? `${sub.product} · ${sub.quantity} ${sub.unit}${link.label ? ` · ${link.label}` : ""}`
+    : `${link.publicId} just filed`;
+  return ringDesk({ title: "MCSC Intake", body });
+}
+
+export type PingSettings = DeskPing & { doorbell: string };
+
+export const getPingSettings = createServerFn({ method: "POST" }).handler(
+  async (): Promise<PingSettings | null> => {
+    const settings = await readDeskPing();
+    if (!settings) return null;
+    return { ...settings, doorbell: doorbellUrl(settings.pingTopic) };
+  },
+);
+
+export const enablePing = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      email: z.string().trim().max(120),
+    }),
+  )
+  .handler(async ({ data }): Promise<PingSettings> => {
+    const email = data.email.trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new Error("That email doesn’t look right.");
+    }
+    const sql = await getSql();
+    const existing = await readDeskPing();
+    const topic = existing?.pingTopic || `mcsc-${randomToken(18)}`;
+    await sql.query(
+      `insert into desk_settings (id, ping_topic, ping_email, ping_on, updated_at)
+       values (1, $1, $2, true, now())
+       on conflict (id) do update set
+         ping_email = excluded.ping_email,
+         ping_on = true,
+         updated_at = now()`,
+      [topic, email],
+    );
+    const settings = await readDeskPing();
+    if (!settings) throw new Error("Could not turn pings on.");
+    return { ...settings, doorbell: doorbellUrl(settings.pingTopic) };
+  });
+
+export const disablePing = createServerFn({ method: "POST" }).handler(
+  async (): Promise<PingSettings | null> => {
+    const sql = await getSql();
+    await sql.query(
+      `update desk_settings set ping_on = false, updated_at = now() where id = 1`,
+    );
+    const settings = await readDeskPing();
+    if (!settings) return null;
+    return { ...settings, doorbell: doorbellUrl(settings.pingTopic) };
+  },
+);
+
+export const sendTestPing = createServerFn({ method: "POST" }).handler(
+  async (): Promise<{ ok: true }> => {
+    const settings = await readDeskPing();
+    if (!settings?.pingOn) throw new Error("Turn pings on first.");
+    await ringDesk({
+      title: "MCSC Intake",
+      body: "Test ping. If you got this, the doorbell works.",
+    });
+    return { ok: true };
+  },
+);
