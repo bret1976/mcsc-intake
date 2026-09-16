@@ -1,6 +1,6 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "NITRO_PRESET=node-server npm run build"
+buildCommand = "NITRO_PRESET=node-server node scripts/with-app-env.mjs vite build"
 watchPatterns = ["src/**", "package.json", "package-lock.json", "vite.config.ts", "migrations/**"]
 
 [deploy]
