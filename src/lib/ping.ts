@@ -117,6 +117,7 @@ async function sendPingEmail(opts: {
     return { ok: true, detail: "Sent. Check that inbox (and spam)." };
   }
 
+  const origin = deskUrl().replace(/\/desk$/, "");
   const res = await fetch(
     `https://formsubmit.co/ajax/${encodeURIComponent(to)}`,
     {
@@ -124,6 +125,8 @@ async function sendPingEmail(opts: {
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        Origin: origin,
+        Referer: `${origin}/desk`,
       },
       body: JSON.stringify({
         _subject: opts.subject,
