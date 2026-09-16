@@ -6,9 +6,45 @@ import {
   disablePing,
   enablePing,
   getPingSettings,
+  savePushSub,
   sendTestPing,
   type PingSettings,
 } from "@/lib/intake-api";
+import { VAPID_PUBLIC_KEY } from "@/lib/vapid-public";
+
+function urlBase64ToUint8Array(base64: string) {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob(base64.replace(/-/g, "+").replace(/_/g, "/"));
+  const output = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) output[i] = raw.charCodeAt(i);
+  return output;
+}
+
+async function armThisPhone() {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") return;
+  const reg = await navigator.serviceWorker.register("/sw-ping.js");
+  await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+  }
+  const json = sub.toJSON();
+  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return;
+  await savePushSub({
+    data: {
+      endpoint: json.endpoint,
+      p256dh: json.keys.p256dh,
+      auth: json.keys.auth,
+    },
+  });
+}
 
 export function PingPanel() {
   const [settings, setSettings] = useState<PingSettings | null>(null);
@@ -35,8 +71,10 @@ export function PingPanel() {
     try {
       const next = await enablePing({ data: { email } });
       setSettings(next);
-      if (typeof Notification !== "undefined" && Notification.permission === "default") {
-        await Notification.requestPermission();
+      try {
+        await armThisPhone();
+      } catch {
+        /* email ping still works if this phone can't subscribe */
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not turn pings on.");
@@ -64,6 +102,11 @@ export function PingPanel() {
     setNote(null);
     setBusy(true);
     try {
+      try {
+        await armThisPhone();
+      } catch {
+        /* keep going — inbox ping is the main door */
+      }
       const result = await sendTestPing({ data: { email } });
       const next = await getPingSettings();
       setSettings(next);
@@ -96,9 +139,9 @@ export function PingPanel() {
         <div>
           <p className="mb-1 text-sm font-medium text-fg">Phone ping</p>
           <p className="text-xs text-muted">
-            This emails the address on your phone. First time, you may get a
-            confirm link — click it, then Test ping again. After that, every
-            Send request hits that inbox.
+            Type the email on your phone. Turn pings on — allow alerts if the
+            phone asks. Then Test ping. First inbox send may be a confirm
+            link. Click it, then Test ping again.
           </p>
         </div>
         {on ? (
@@ -153,7 +196,7 @@ export function PingPanel() {
       {on && settings?.doorbell ? (
         <div className="mt-4 rounded-lg border border-border bg-surface-2 p-3">
           <p className="mb-2 text-xs text-muted">
-            Louder doorbell: open this once on the phone and allow alerts.
+            Backup doorbell: open this once on the phone and allow alerts.
           </p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Input readOnly value={settings.doorbell} className="font-mono text-xs" />

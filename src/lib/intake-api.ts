@@ -4,7 +4,7 @@ import { getSql } from "@/lib/db";
 import { publicId, randomToken } from "@/lib/ids";
 import type { Status } from "@/lib/catalog";
 import { PRODUCTS, UNITS, TERMS, PAYMENT_TERMS, STATUSES } from "@/lib/catalog";
-import { doorbellUrl, readDeskPing, ringDesk, type DeskPing } from "@/lib/ping";
+import { doorbellUrl, readDeskPing, ringDesk, savePushSubscription, type DeskPing } from "@/lib/ping";
 
 export type Submission = {
   product: string;
@@ -354,4 +354,17 @@ export const sendTestPing = createServerFn({ method: "POST" })
       body: "Test ping. If you got this, the doorbell works.",
       requireEmail: true,
     });
+  });
+
+export const savePushSub = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      endpoint: z.string().trim().min(8).max(2000),
+      p256dh: z.string().trim().min(8).max(500),
+      auth: z.string().trim().min(4).max(200),
+    }),
+  )
+  .handler(async ({ data }): Promise<{ ok: true }> => {
+    await savePushSubscription(data);
+    return { ok: true };
   });
