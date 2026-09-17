@@ -13,6 +13,8 @@ export type Submission = {
   terms: string;
   paymentTerms: string;
   deliveryWindow: string;
+  businessLicense: string;
+  rcn: string;
   notes: string;
 };
 
@@ -43,6 +45,8 @@ type LinkRow = {
   terms: string | null;
   payment_terms: string | null;
   delivery_window: string | null;
+  business_license: string | null;
+  rcn: string | null;
   notes: string | null;
 };
 
@@ -61,6 +65,8 @@ const LINK_SELECT = `
   s.terms,
   s.payment_terms,
   s.delivery_window,
+  s.business_license,
+  s.rcn,
   s.notes
 `;
 
@@ -74,6 +80,8 @@ function mapLink(row: LinkRow): IntakeLink {
           terms: row.terms,
           paymentTerms: row.payment_terms ?? "",
           deliveryWindow: row.delivery_window ?? "",
+          businessLicense: row.business_license ?? "",
+          rcn: row.rcn ?? "",
           notes: row.notes ?? "",
         }
       : null;
@@ -168,6 +176,8 @@ const openSchema = z.object({
   terms: z.enum(TERMS),
   paymentTerms: z.union([z.enum(PAYMENT_TERMS), z.literal("")]),
   deliveryWindow: z.string().trim().max(80),
+  businessLicense: z.string().trim().max(80),
+  rcn: z.string().trim().max(80),
   notes: z.string().trim().max(2000),
 });
 
@@ -187,8 +197,8 @@ export const submitOpen = createServerFn({ method: "POST" })
     await sql.query(
       `insert into submissions (
          id, link_id, product, quantity, unit, terms,
-         payment_terms, delivery_window, notes
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+         payment_terms, delivery_window, business_license, rcn, notes
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         subId,
         id,
@@ -198,6 +208,8 @@ export const submitOpen = createServerFn({ method: "POST" })
         data.terms,
         data.paymentTerms,
         data.deliveryWindow.trim(),
+        data.businessLicense.trim(),
+        data.rcn.trim(),
         data.notes.trim(),
       ],
     );
@@ -228,8 +240,8 @@ export const submitIntake = createServerFn({ method: "POST" })
     await sql.query(
       `insert into submissions (
          id, link_id, product, quantity, unit, terms,
-         payment_terms, delivery_window, notes
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+         payment_terms, delivery_window, business_license, rcn, notes
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         subId,
         link.id,
@@ -239,6 +251,8 @@ export const submitIntake = createServerFn({ method: "POST" })
         data.terms,
         data.paymentTerms,
         data.deliveryWindow.trim(),
+        data.businessLicense.trim(),
+        data.rcn.trim(),
         data.notes.trim(),
       ],
     );

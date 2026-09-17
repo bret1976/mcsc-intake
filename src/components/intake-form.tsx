@@ -23,6 +23,8 @@ export function IntakeForm({ link, showShare = false }: Props) {
   const [terms, setTerms] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("");
   const [deliveryWindow, setDeliveryWindow] = useState("");
+  const [businessLicense, setBusinessLicense] = useState("");
+  const [rcn, setRcn] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -42,6 +44,8 @@ export function IntakeForm({ link, showShare = false }: Props) {
       terms: terms as (typeof TERMS)[number],
       paymentTerms: paymentTerms as (typeof PAYMENT_TERMS)[number] | "",
       deliveryWindow: deliveryWindow.trim(),
+      businessLicense: businessLicense.trim(),
+      rcn: rcn.trim(),
       notes: notes.trim(),
     };
     try {
@@ -192,6 +196,34 @@ export function IntakeForm({ link, showShare = false }: Props) {
               placeholder="e.g. Oct 2026 or 15–25 Oct"
               value={deliveryWindow}
               onChange={(e) => setDeliveryWindow(e.target.value)}
+            />
+          </div>
+
+          <div className="grid gap-1.5">
+            <label htmlFor="license" className="text-xs font-medium tracking-wide text-muted">
+              Business License #{" "}
+              <span className="font-normal text-subtle">(optional)</span>
+            </label>
+            <Input
+              id="license"
+              autoComplete="off"
+              placeholder="License number"
+              value={businessLicense}
+              onChange={(e) => setBusinessLicense(e.target.value)}
+            />
+          </div>
+
+          <div className="grid gap-1.5">
+            <label htmlFor="rcn" className="text-xs font-medium tracking-wide text-muted">
+              Refinery Control #{" "}
+              <span className="font-normal text-subtle">(optional — RCN, if applicable)</span>
+            </label>
+            <Input
+              id="rcn"
+              autoComplete="off"
+              placeholder="RCN number"
+              value={rcn}
+              onChange={(e) => setRcn(e.target.value)}
             />
           </div>
 

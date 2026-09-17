@@ -71,6 +71,18 @@ function ThanksPage() {
             <dd className="text-fg">{sub.paymentTerms}</dd>
           </div>
         ) : null}
+        {sub.businessLicense ? (
+          <div>
+            <dt className="text-xs text-subtle">Business License #</dt>
+            <dd className="text-fg">{sub.businessLicense}</dd>
+          </div>
+        ) : null}
+        {sub.rcn ? (
+          <div>
+            <dt className="text-xs text-subtle">Refinery Control # (RCN)</dt>
+            <dd className="text-fg">{sub.rcn}</dd>
+          </div>
+        ) : null}
       </dl>
 
       <Link

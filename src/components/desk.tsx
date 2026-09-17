@@ -301,6 +301,14 @@ function LinkDetail({
               value={sub.deliveryWindow || "—"}
               wide
             />
+            <Item
+              label="Business License #"
+              value={sub.businessLicense || "—"}
+            />
+            <Item
+              label="Refinery Control # (RCN)"
+              value={sub.rcn || "—"}
+            />
             <Item label="Spec / notes" value={sub.notes || "—"} wide />
           </dl>
           <p className="mt-4 text-xs text-subtle">
