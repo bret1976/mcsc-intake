@@ -4,6 +4,7 @@ import { Link2, Plus } from "lucide-react";
 import { McscMark } from "@/components/mark";
 import { CopyFormLink } from "@/components/copy-form-link";
 import { PingPanel } from "@/components/ping-panel";
+import { QuotePanel } from "@/components/quote-panel";
 import { SharePanel } from "@/components/share-panel";
 import { Tracker } from "@/components/tracker";
 import { Button } from "@/components/ui/button";
@@ -227,7 +228,15 @@ export function Desk({ initial }: { initial: IntakeLink[] }) {
           {!selected ? (
             <EmptyDetail />
           ) : (
-            <LinkDetail link={selected} onAdvance={advance} />
+            <LinkDetail
+              link={selected}
+              onAdvance={advance}
+              onQuoted={(updated) => {
+                setLinks((prev) =>
+                  prev.map((l) => (l.token === updated.token ? updated : l)),
+                );
+              }}
+            />
           )}
         </section>
       </div>
@@ -260,9 +269,11 @@ function EmptyDetail() {
 function LinkDetail({
   link,
   onAdvance,
+  onQuoted,
 }: {
   link: IntakeLink;
   onAdvance: (status: "review" | "quoted" | "closed") => void;
+  onQuoted: (link: IntakeLink) => void;
 }) {
   const sub = link.submission;
   return (
@@ -282,6 +293,14 @@ function LinkDetail({
 
       <Tracker status={link.status} />
       <SharePanel link={link} />
+
+      {sub ? (
+        <QuotePanel
+          key={link.token}
+          link={link}
+          onQuoted={(updated) => onQuoted(updated)}
+        />
+      ) : null}
 
       {sub ? (
         <div>
@@ -327,11 +346,6 @@ function LinkDetail({
         {link.status === "submitted" ? (
           <Button size="sm" variant="outline" onClick={() => onAdvance("review")}>
             Mark in review
-          </Button>
-        ) : null}
-        {link.status === "review" ? (
-          <Button size="sm" variant="outline" onClick={() => onAdvance("quoted")}>
-            Mark quoted
           </Button>
         ) : null}
         {link.status !== "closed" ? (

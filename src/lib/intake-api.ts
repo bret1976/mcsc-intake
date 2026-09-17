@@ -4,7 +4,7 @@ import { getSql } from "@/lib/db";
 import { publicId, randomToken } from "@/lib/ids";
 import type { Status } from "@/lib/catalog";
 import { PRODUCTS, UNITS, TERMS, PAYMENT_TERMS, STATUSES } from "@/lib/catalog";
-import { doorbellUrl, readDeskPing, ringDesk, savePushSubscription, type DeskPing } from "@/lib/ping";
+import { doorbellUrl, normalizePhone, readDeskPing, ringDesk, savePushSubscription, type DeskPing } from "@/lib/ping";
 
 export type Submission = {
   product: string;
@@ -18,6 +18,14 @@ export type Submission = {
   notes: string;
 };
 
+export type Quote = {
+  price: string;
+  validity: string;
+  incoterms: string;
+  notes: string;
+  quotedAt: string | null;
+};
+
 export type IntakeLink = {
   id: string;
   token: string;
@@ -27,6 +35,7 @@ export type IntakeLink = {
   createdAt: string;
   openedAt: string | null;
   submittedAt: string | null;
+  quote: Quote | null;
   submission: Submission | null;
 };
 
@@ -39,6 +48,11 @@ type LinkRow = {
   created_at: string;
   opened_at: string | null;
   submitted_at: string | null;
+  quote_price: string | null;
+  quote_validity: string | null;
+  quote_incoterms: string | null;
+  quote_notes: string | null;
+  quoted_at: string | null;
   product: string | null;
   quantity: string | null;
   unit: string | null;
@@ -59,6 +73,11 @@ const LINK_SELECT = `
   l.created_at::text as created_at,
   l.opened_at::text as opened_at,
   l.submitted_at::text as submitted_at,
+  coalesce(l.quote_price, '') as quote_price,
+  coalesce(l.quote_validity, '') as quote_validity,
+  coalesce(l.quote_incoterms, '') as quote_incoterms,
+  coalesce(l.quote_notes, '') as quote_notes,
+  l.quoted_at::text as quoted_at,
   s.product,
   s.quantity,
   s.unit,
@@ -85,6 +104,16 @@ function mapLink(row: LinkRow): IntakeLink {
           notes: row.notes ?? "",
         }
       : null;
+  const quote: Quote | null =
+    row.quoted_at || (row.quote_price && row.quote_price.trim())
+      ? {
+          price: row.quote_price ?? "",
+          validity: row.quote_validity ?? "",
+          incoterms: row.quote_incoterms ?? "",
+          notes: row.quote_notes ?? "",
+          quotedAt: row.quoted_at,
+        }
+      : null;
   return {
     id: row.id,
     token: row.token,
@@ -96,6 +125,7 @@ function mapLink(row: LinkRow): IntakeLink {
     createdAt: row.created_at,
     openedAt: row.opened_at,
     submittedAt: row.submitted_at,
+    quote,
     submission,
   };
 }
@@ -296,29 +326,112 @@ export const setLinkStatus = createServerFn({ method: "POST" })
 function ringFor(link: IntakeLink) {
   const sub = link.submission;
   const body = sub
-    ? `${sub.product} · ${sub.quantity} ${sub.unit}${link.label ? ` · ${link.label}` : ""}`
+    ? `${link.publicId} filed: ${sub.quantity} ${sub.unit} ${sub.product}`
     : `${link.publicId} just filed`;
-  return ringDesk({ title: "MCSC Intake — new request", body }).catch(() => undefined);
+  return ringDesk({ title: "MCSC Intake", body }).catch(() => undefined);
 }
+
+export const sendQuote = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      token: z.string().trim().min(1).max(64),
+      price: z.string().trim().min(1).max(80),
+      validity: z.string().trim().min(1).max(80),
+      incoterms: z.enum(TERMS),
+      notes: z.string().trim().max(2000),
+    }),
+  )
+  .handler(async ({ data }): Promise<IntakeLink> => {
+    const sql = await getSql();
+    const rows = await sql.query<{ id: string; status: string }>(
+      `select id, status from intake_links where token = $1 limit 1`,
+      [data.token],
+    );
+    const row = rows[0];
+    if (!row) throw new Error("Link not found.");
+    if (row.status === "closed") {
+      throw new Error("This link is closed.");
+    }
+    if (row.status === "sent" || row.status === "opened") {
+      throw new Error("Nothing to quote yet. Wait until they file.");
+    }
+    await sql.query(
+      `update intake_links
+       set quote_price = $1,
+           quote_validity = $2,
+           quote_incoterms = $3,
+           quote_notes = $4,
+           quoted_at = now(),
+           status = 'quoted'
+       where token = $5`,
+      [
+        data.price.trim(),
+        data.validity.trim(),
+        data.incoterms,
+        data.notes.trim(),
+        data.token,
+      ],
+    );
+    const updated = await fetchLinkByToken(data.token);
+    if (!updated) throw new Error("Quote saved, but failed to reload.");
+    return updated;
+  });
 
 export type PingSettings = DeskPing & { doorbell: string };
 
-async function upsertPing(emailRaw: string): Promise<PingSettings> {
-  const email = emailRaw.trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+const pingInput = z.object({
+  email: z.string().trim().max(120),
+  phone: z.string().trim().max(32),
+  whatsappKey: z.string().trim().max(80),
+  signalKey: z.string().trim().max(80),
+  webhook: z.string().trim().max(500),
+});
+
+async function upsertPing(data: z.infer<typeof pingInput>): Promise<PingSettings> {
+  const email = data.email.trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new Error("That email doesn’t look right.");
+  }
+  const phone = data.phone.trim() ? normalizePhone(data.phone) : "";
+  const webhook = data.webhook.trim();
+  if (webhook) {
+    let parsed: URL;
+    try {
+      parsed = new URL(webhook);
+    } catch {
+      throw new Error("That webhook isn’t a valid URL.");
+    }
+    if (parsed.protocol !== "https:") {
+      throw new Error("Webhook must start with https://");
+    }
+  }
+  if (!email && !phone && !webhook) {
+    throw new Error("Add an email, a phone number, or a webhook.");
   }
   const sql = await getSql();
   const existing = await readDeskPing();
   const topic = existing?.pingTopic || `mcsc-${randomToken(18)}`;
   await sql.query(
-    `insert into desk_settings (id, ping_topic, ping_email, ping_on, updated_at)
-     values (1, $1, $2, true, now())
+    `insert into desk_settings (
+       id, ping_topic, ping_email, ping_phone, ping_whatsapp_key,
+       ping_signal_key, ping_webhook, ping_on, updated_at
+     ) values (1, $1, $2, $3, $4, $5, $6, true, now())
      on conflict (id) do update set
        ping_email = excluded.ping_email,
+       ping_phone = excluded.ping_phone,
+       ping_whatsapp_key = excluded.ping_whatsapp_key,
+       ping_signal_key = excluded.ping_signal_key,
+       ping_webhook = excluded.ping_webhook,
        ping_on = true,
        updated_at = now()`,
-    [topic, email],
+    [
+      topic,
+      email,
+      phone,
+      data.whatsappKey.trim(),
+      data.signalKey.trim(),
+      webhook,
+    ],
   );
   const settings = await readDeskPing();
   if (!settings) throw new Error("Could not turn pings on.");
@@ -334,13 +447,9 @@ export const getPingSettings = createServerFn({ method: "POST" }).handler(
 );
 
 export const enablePing = createServerFn({ method: "POST" })
-  .validator(
-    z.object({
-      email: z.string().trim().min(3).max(120),
-    }),
-  )
+  .validator(pingInput)
   .handler(async ({ data }): Promise<PingSettings> => {
-    return upsertPing(data.email);
+    return upsertPing(data);
   });
 
 export const disablePing = createServerFn({ method: "POST" }).handler(
@@ -356,13 +465,9 @@ export const disablePing = createServerFn({ method: "POST" }).handler(
 );
 
 export const sendTestPing = createServerFn({ method: "POST" })
-  .validator(
-    z.object({
-      email: z.string().trim().min(3).max(120),
-    }),
-  )
+  .validator(pingInput)
   .handler(async ({ data }): Promise<{ ok: true; detail: string }> => {
-    await upsertPing(data.email);
+    await upsertPing(data);
     return ringDesk({
       title: "MCSC Intake — test ping",
       body: "Test ping. If you got this, the doorbell works.",

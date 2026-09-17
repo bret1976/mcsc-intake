@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Envelope } from "@/components/envelope";
 import { IntakeForm } from "@/components/intake-form";
 import { McscMark } from "@/components/mark";
-import { isOpenStatus } from "@/lib/catalog";
 import { getLink, openLink } from "@/lib/intake-api";
 
 export const Route = createFileRoute("/r/$token")({
@@ -30,20 +30,15 @@ function FormPage() {
     );
   }
 
+  if (link.submission) {
+    return <Envelope initial={link} />;
+  }
+
   if (link.status === "closed") {
     return (
       <Gate
         title="Link closed"
         body="This intake is no longer accepting requests."
-      />
-    );
-  }
-
-  if (!isOpenStatus(link.status) && link.submission) {
-    return (
-      <Gate
-        title="Already submitted"
-        body={`${link.publicId} is already on the desk. If you need to change it, ask them to send a new link.`}
       />
     );
   }

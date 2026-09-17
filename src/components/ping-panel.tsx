@@ -49,6 +49,10 @@ async function armThisPhone() {
 export function PingPanel() {
   const [settings, setSettings] = useState<PingSettings | null>(null);
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [signalKey, setSignalKey] = useState("");
+  const [whatsappKey, setWhatsappKey] = useState("");
+  const [webhook, setWebhook] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -59,22 +63,33 @@ export function PingPanel() {
     getPingSettings()
       .then((next) => {
         setSettings(next);
-        if (next?.pingEmail) setEmail(next.pingEmail);
+        if (!next) return;
+        if (next.pingEmail) setEmail(next.pingEmail);
+        if (next.pingPhone) setPhone(next.pingPhone);
+        if (next.pingSignalKey) setSignalKey(next.pingSignalKey);
+        if (next.pingWhatsappKey) setWhatsappKey(next.pingWhatsappKey);
+        if (next.pingWebhook) setWebhook(next.pingWebhook);
       })
       .catch(() => undefined);
   }, []);
+
+  function payload() {
+    return { email, phone, signalKey, whatsappKey, webhook };
+  }
+
+  const canArm = Boolean(email.trim() || phone.trim() || webhook.trim());
 
   async function turnOn() {
     setError(null);
     setNote(null);
     setBusy(true);
     try {
-      const next = await enablePing({ data: { email } });
+      const next = await enablePing({ data: payload() });
       setSettings(next);
       try {
         await armThisPhone();
       } catch {
-        /* email ping still works if this phone can't subscribe */
+        /* other channels still work */
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not turn pings on.");
@@ -105,9 +120,9 @@ export function PingPanel() {
       try {
         await armThisPhone();
       } catch {
-        /* keep going — inbox ping is the main door */
+        /* keep going */
       }
-      const result = await sendTestPing({ data: { email } });
+      const result = await sendTestPing({ data: payload() });
       const next = await getPingSettings();
       setSettings(next);
       setNote(result.detail);
@@ -137,11 +152,12 @@ export function PingPanel() {
     <div className="mb-6 rounded-xl border border-border bg-surface p-4 shadow-panel sm:p-5">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          <p className="mb-1 text-sm font-medium text-fg">Phone ping</p>
+          <p className="mb-1 text-sm font-medium text-fg">Ping the way you talk</p>
           <p className="text-xs text-muted">
-            Type the email on your phone. Turn pings on — allow alerts if the
-            phone asks. Then Test ping. First inbox send may be a confirm
-            link. Click it, then Test ping again.
+            When they hit Send request, you get a note like{" "}
+            <span className="font-mono text-fg">MC-XXXX filed: 24000 BBL ULSD</span>
+            . Phone for SMS / Signal / WhatsApp. Keys are one-time from CallMeBot.
+            Webhook is Zapier or Make.
           </p>
         </div>
         {on ? (
@@ -151,7 +167,7 @@ export function PingPanel() {
         )}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+      <div className="grid gap-3 sm:grid-cols-2">
         <div className="grid gap-1.5">
           <label htmlFor="ping-email" className="text-xs font-medium tracking-wide text-muted">
             Email on your phone
@@ -166,31 +182,85 @@ export function PingPanel() {
             onChange={(e) => setEmail(e.target.value)}
           />
         </div>
-        <div className="flex items-end gap-2">
-          {on ? (
-            <>
-              <Button type="button" variant="outline" onClick={turnOff} disabled={busy}>
-                Off
-              </Button>
-              <Button type="button" onClick={test} disabled={busy || !email.trim()}>
-                {tested ? (
-                  <>
-                    <Check className="size-4" strokeWidth={1.75} />
-                    Sent
-                  </>
-                ) : busy ? (
-                  "Sending…"
-                ) : (
-                  "Test ping"
-                )}
-              </Button>
-            </>
-          ) : (
-            <Button type="button" onClick={turnOn} disabled={busy || !email.trim()}>
-              {busy ? "Saving…" : "Turn pings on"}
-            </Button>
-          )}
+        <div className="grid gap-1.5">
+          <label htmlFor="ping-phone" className="text-xs font-medium tracking-wide text-muted">
+            Phone
+          </label>
+          <Input
+            id="ping-phone"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            placeholder="+1 702 …"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
         </div>
+        <div className="grid gap-1.5">
+          <label htmlFor="ping-signal" className="text-xs font-medium tracking-wide text-muted">
+            Signal key{" "}
+            <span className="font-normal text-subtle">(optional)</span>
+          </label>
+          <Input
+            id="ping-signal"
+            autoComplete="off"
+            placeholder="From CallMeBot in Signal"
+            value={signalKey}
+            onChange={(e) => setSignalKey(e.target.value)}
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <label htmlFor="ping-wa" className="text-xs font-medium tracking-wide text-muted">
+            WhatsApp key{" "}
+            <span className="font-normal text-subtle">(optional)</span>
+          </label>
+          <Input
+            id="ping-wa"
+            autoComplete="off"
+            placeholder="From CallMeBot in WhatsApp"
+            value={whatsappKey}
+            onChange={(e) => setWhatsappKey(e.target.value)}
+          />
+        </div>
+        <div className="grid gap-1.5 sm:col-span-2">
+          <label htmlFor="ping-hook" className="text-xs font-medium tracking-wide text-muted">
+            Webhook{" "}
+            <span className="font-normal text-subtle">(optional — Zapier / Make)</span>
+          </label>
+          <Input
+            id="ping-hook"
+            autoComplete="off"
+            placeholder="https://hooks.zapier.com/…"
+            value={webhook}
+            onChange={(e) => setWebhook(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {on ? (
+          <>
+            <Button type="button" variant="outline" onClick={turnOff} disabled={busy}>
+              Off
+            </Button>
+            <Button type="button" onClick={test} disabled={busy || !canArm}>
+              {tested ? (
+                <>
+                  <Check className="size-4" strokeWidth={1.75} />
+                  Sent
+                </>
+              ) : busy ? (
+                "Sending…"
+              ) : (
+                "Test ping"
+              )}
+            </Button>
+          </>
+        ) : (
+          <Button type="button" onClick={turnOn} disabled={busy || !canArm}>
+            {busy ? "Saving…" : "Turn pings on"}
+          </Button>
+        )}
       </div>
 
       {on && settings?.doorbell ? (
