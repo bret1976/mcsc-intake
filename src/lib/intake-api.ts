@@ -5,6 +5,7 @@ import { publicId, randomToken } from "@/lib/ids";
 import type { Status } from "@/lib/catalog";
 import { PRODUCTS, UNITS, TERMS, PAYMENT_TERMS, STATUSES } from "@/lib/catalog";
 import { doorbellUrl, normalizePhone, readDeskPing, ringDesk, savePushSubscription, type DeskPing } from "@/lib/ping";
+import { assertAllowedOrThrow, recordIntake } from "@/lib/intake-guard";
 
 export type Submission = {
   product: string;
@@ -214,6 +215,14 @@ const openSchema = z.object({
 export const submitOpen = createServerFn({ method: "POST" })
   .validator(openSchema)
   .handler(async ({ data }): Promise<IntakeLink> => {
+    const fpInput = {
+      product: data.product,
+      quantity: data.quantity.trim(),
+      unit: data.unit,
+      businessLicense: data.businessLicense.trim(),
+      rcn: data.rcn.trim(),
+    };
+    assertAllowedOrThrow(fpInput);
     const sql = await getSql();
     const id = randomToken(22);
     const token = randomToken(20);
@@ -243,6 +252,7 @@ export const submitOpen = createServerFn({ method: "POST" })
         data.notes.trim(),
       ],
     );
+    recordIntake({ ...fpInput, source: "submitOpen" });
     const updated = await fetchLinkByToken(token);
     if (!updated) throw new Error("Saved, but failed to reload the request.");
     await ringFor(updated);
@@ -253,6 +263,15 @@ export const submitOpen = createServerFn({ method: "POST" })
 export const submitIntake = createServerFn({ method: "POST" })
   .validator(openSchema.extend({ token: z.string().trim().min(1).max(64) }))
   .handler(async ({ data }): Promise<IntakeLink> => {
+    const fpInput = {
+      product: data.product,
+      quantity: data.quantity.trim(),
+      unit: data.unit,
+      businessLicense: data.businessLicense.trim(),
+      rcn: data.rcn.trim(),
+    };
+    // Soft-guard same fingerprint across different tokens (desk spam) within window.
+    assertAllowedOrThrow(fpInput);
     const sql = await getSql();
     const links = await sql.query<{ id: string; status: string }>(
       `select id, status from intake_links where token = $1 limit 1`,
@@ -294,6 +313,7 @@ export const submitIntake = createServerFn({ method: "POST" })
        where id = $1`,
       [link.id],
     );
+    recordIntake({ ...fpInput, source: "submitIntake" });
     const updated = await fetchLinkByToken(data.token);
     if (!updated) throw new Error("Saved, but failed to reload the request.");
     await ringFor(updated);
