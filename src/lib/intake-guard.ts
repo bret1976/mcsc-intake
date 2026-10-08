@@ -14,6 +14,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { assertSubmitAllowed } from "./ring-guard";
+import { currentClientKey } from "./ring-guard-request.server";
 
 export const PACK = "intake-guard-v1";
 const DEFAULT_WINDOW_SEC = 24 * 60 * 60;
@@ -235,7 +237,11 @@ export function recordIntake(
 /** Throw a clear Error when a submit should soft-block (for createServerFn UI). */
 export function assertAllowedOrThrow(input: IntakeFingerprintInput): void {
   const result = checkIntake(input);
-  if (!result.blocked) return;
+  if (!result.blocked) {
+    // ring-guard-v1: per-client + global submit flood brake (RING_GUARD=0 disables).
+    assertSubmitAllowed(currentClientKey());
+    return;
+  }
   const age = result.match?.age_sec != null ? ` (~${Math.round(result.match.age_sec)}s ago)` : "";
   throw new Error(
     `Duplicate intake blocked: the same product/quantity/unit/license/RCN was already filed recently${age}. Wait or change the request. (intake-guard-v1)`,

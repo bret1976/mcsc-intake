@@ -2,6 +2,7 @@ import webpush from "web-push";
 import { getSql } from "@/lib/db";
 import { randomToken } from "@/lib/ids";
 import { VAPID_PUBLIC_KEY } from "@/lib/vapid-public";
+import { ringGate } from "@/lib/ring-guard";
 
 type DeskPing = {
   pingOn: boolean;
@@ -288,6 +289,17 @@ export async function ringDesk(opts: {
     if (opts.requireEmail) throw new Error("Turn pings on first.");
     return { ok: true, detail: "Pings are off." };
   }
+
+  // ring-guard-v1: doorbell budget. Test pings (requireEmail) always pass; held
+  // rings are reported on the next ping that goes out. RING_GUARD=0 disables.
+  const gate = ringGate({ test: Boolean(opts.requireEmail) });
+  if (!gate.allow) {
+    return {
+      ok: true,
+      detail: "Ping held by ring-guard-v1 (ping budget reached); the request is on the desk.",
+    };
+  }
+  if (gate.body_suffix) opts = { ...opts, body: `${opts.body}${gate.body_suffix}` };
 
   const desk = deskUrl();
   const text = `${opts.body}\n\nDesk: ${desk}`;

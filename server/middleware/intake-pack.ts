@@ -13,6 +13,13 @@ import {
   summary,
   type IntakeFingerprintInput,
 } from "../../src/lib/intake-guard";
+import {
+  RING_PACK,
+  clientIpFromHeaders,
+  clientKeyFrom,
+  ringGuardSummary,
+  takeSubmit,
+} from "../../src/lib/ring-guard";
 
 interface PackEvent {
   url: URL;
@@ -69,10 +76,25 @@ export default async function intakePackMiddleware(
     return json({
       ok: true,
       service: "mcsc-intake",
-      packs: [PACK],
+      packs: [PACK, RING_PACK],
       pack: PACK,
       ts: new Date().toISOString(),
     });
+  }
+
+  // ring-guard-v1 (read-only status; no IPs exposed)
+  if (method === "GET" && path === "/api/ring-guard/summary") {
+    return json(ringGuardSummary());
+  }
+
+  // ring-guard-v1 dry-run probe: evaluates this caller against the per-client
+  // submit limit in a separate probe bucket. Never files an intake, never rings
+  // the desk, never counts toward real submit totals.
+  if (method === "POST" && path === "/api/ring-guard/check") {
+    const body = await readJsonBody(event.req);
+    const key = clientKeyFrom(clientIpFromHeaders((n) => event.req.headers.get(n)));
+    const decision = takeSubmit(key, { probe: true, record: body.record === true });
+    return json({ ...decision, probe: true, recorded: body.record === true && decision.allow });
   }
 
   if (method === "GET" && path === "/api/intake-guard/summary") {
